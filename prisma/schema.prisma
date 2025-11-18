@@ -18,39 +18,71 @@ enum EntityType {
   OTHER
 }
 
+enum EntityStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}
+
+enum Visibility {
+  PUBLIC
+  PRIVATE
+  TEAM
+}
+
 model LoreEntity {
-  id              String   @id @default(cuid())
+  id              String       @id @default(cuid())
   type            EntityType
   name            String
-  summaryMarkdown String   @db.Text
-  metaJson        Json?    @default("{}")
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  summaryMarkdown String       @db.Text
+  metaJson        Json?        @default("{}")
+  status          EntityStatus @default(DRAFT)
+  visibility      Visibility   @default(PRIVATE)
+  imageUrl        String?
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
 
   // Relations
-  eventsAtLocation LoreEvent[]    @relation("EventLocation")
-  relationsFrom    LoreRelation[] @relation("RelationFrom")
-  relationsTo      LoreRelation[] @relation("RelationTo")
+  eventsAtLocation LoreEvent[]        @relation("EventLocation")
+  relationsFrom    LoreRelation[]     @relation("RelationFrom")
+  relationsTo      LoreRelation[]     @relation("RelationTo")
+  tags             EntityTag[]
+  versions         EntityVersion[]
+  projectEntities  ProjectEntity[]
+  arcEntities      StoryArcEntity[]
+  eventParticipants EventParticipant[]
 
   @@index([type])
   @@index([name])
+  @@index([status])
+  @@index([visibility])
 }
 
 model LoreEvent {
-  id                  String   @id @default(cuid())
+  id                  String       @id @default(cuid())
   title               String
-  descriptionMarkdown String   @db.Text
+  descriptionMarkdown String       @db.Text
   occurredAt          DateTime
   locationId          String?
-  metaJson            Json?    @default("{}")
-  createdAt           DateTime @default(now())
-  updatedAt           DateTime @updatedAt
+  timelineId          String?
+  status              EntityStatus @default(DRAFT)
+  visibility          Visibility   @default(PRIVATE)
+  metaJson            Json?        @default("{}")
+  createdAt           DateTime     @default(now())
+  updatedAt           DateTime     @updatedAt
 
   // Relations
-  location LoreEntity? @relation("EventLocation", fields: [locationId], references: [id], onDelete: SetNull)
+  location      LoreEntity?        @relation("EventLocation", fields: [locationId], references: [id], onDelete: SetNull)
+  timeline      Timeline?          @relation(fields: [timelineId], references: [id], onDelete: SetNull)
+  tags          EventTag[]
+  arcEvents     StoryArcEvent[]
+  participants  EventParticipant[]
+  projectEvents ProjectEvent[]
 
   @@index([occurredAt])
   @@index([locationId])
+  @@index([timelineId])
+  @@index([status])
 }
 
 model LoreRelation {
@@ -59,6 +91,11 @@ model LoreRelation {
   toId         String
   relationType String
   description  String   @db.Text
+  strength     Int      @default(5) // 1-10 scale
+  isConflict   Boolean  @default(false)
+  startedAt    DateTime?
+  endedAt      DateTime?
+  metaJson     Json?    @default("{}")
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
@@ -69,4 +106,206 @@ model LoreRelation {
   @@index([fromId])
   @@index([toId])
   @@index([relationType])
+  @@index([isConflict])
+}
+
+// New models for Phase 3
+
+model Tag {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  slug        String   @unique
+  description String?
+  category    String?  // genre, theme, mood, status, etc.
+  color       String?  // hex color for UI
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  entityTags EntityTag[]
+  eventTags  EventTag[]
+
+  @@index([category])
+  @@index([slug])
+}
+
+model EntityTag {
+  id        String   @id @default(cuid())
+  entityId  String
+  tagId     String
+  createdAt DateTime @default(now())
+
+  entity LoreEntity @relation(fields: [entityId], references: [id], onDelete: Cascade)
+  tag    Tag        @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@unique([entityId, tagId])
+  @@index([entityId])
+  @@index([tagId])
+}
+
+model EventTag {
+  id        String   @id @default(cuid())
+  eventId   String
+  tagId     String
+  createdAt DateTime @default(now())
+
+  event LoreEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  tag   Tag       @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@unique([eventId, tagId])
+  @@index([eventId])
+  @@index([tagId])
+}
+
+model EntityVersion {
+  id              String   @id @default(cuid())
+  entityId        String
+  version         Int
+  name            String
+  summaryMarkdown String   @db.Text
+  metaJson        Json?
+  changeNote      String?  @db.Text
+  createdAt       DateTime @default(now())
+
+  entity LoreEntity @relation(fields: [entityId], references: [id], onDelete: Cascade)
+
+  @@unique([entityId, version])
+  @@index([entityId])
+}
+
+model MediaProject {
+  id              String        @id @default(cuid())
+  name            String
+  slug            String        @unique
+  description     String?       @db.Text
+  mediaType       String        // novel, video, game, comic, etc.
+  status          EntityStatus  @default(DRAFT)
+  targetAudience  String?
+  releaseDate     DateTime?
+  metaJson        Json?         @default("{}")
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  // Relations
+  projectEntities ProjectEntity[]
+  projectEvents   ProjectEvent[]
+
+  @@index([mediaType])
+  @@index([status])
+  @@index([slug])
+}
+
+model ProjectEntity {
+  id        String   @id @default(cuid())
+  projectId String
+  entityId  String
+  role      String?  // protagonist, antagonist, supporting, etc.
+  notes     String?  @db.Text
+  createdAt DateTime @default(now())
+
+  project MediaProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  entity  LoreEntity   @relation(fields: [entityId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, entityId])
+  @@index([projectId])
+  @@index([entityId])
+}
+
+model ProjectEvent {
+  id        String   @id @default(cuid())
+  projectId String
+  eventId   String
+  sequence  Int?     // Order in the narrative
+  notes     String?  @db.Text
+  createdAt DateTime @default(now())
+
+  project MediaProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  event   LoreEvent    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, eventId])
+  @@index([projectId])
+  @@index([eventId])
+}
+
+model StoryArc {
+  id              String       @id @default(cuid())
+  name            String
+  slug            String       @unique
+  description     String?      @db.Text
+  status          EntityStatus @default(DRAFT)
+  startDate       DateTime?
+  endDate         DateTime?
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+
+  // Relations
+  arcEntities StoryArcEntity[]
+  arcEvents   StoryArcEvent[]
+
+  @@index([slug])
+  @@index([status])
+}
+
+model StoryArcEntity {
+  id        String   @id @default(cuid())
+  arcId     String
+  entityId  String
+  role      String?
+  createdAt DateTime @default(now())
+
+  arc    StoryArc   @relation(fields: [arcId], references: [id], onDelete: Cascade)
+  entity LoreEntity @relation(fields: [entityId], references: [id], onDelete: Cascade)
+
+  @@unique([arcId, entityId])
+  @@index([arcId])
+  @@index([entityId])
+}
+
+model StoryArcEvent {
+  id        String   @id @default(cuid())
+  arcId     String
+  eventId   String
+  sequence  Int?
+  createdAt DateTime @default(now())
+
+  arc   StoryArc  @relation(fields: [arcId], references: [id], onDelete: Cascade)
+  event LoreEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  @@unique([arcId, eventId])
+  @@index([arcId])
+  @@index([eventId])
+}
+
+model Timeline {
+  id          String   @id @default(cuid())
+  name        String
+  slug        String   @unique
+  description String?  @db.Text
+  isMainline  Boolean  @default(false)
+  branchedFrom String?  // ID of parent timeline
+  branchedAt   DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  events LoreEvent[]
+
+  @@index([slug])
+  @@index([isMainline])
+}
+
+model EventParticipant {
+  id        String   @id @default(cuid())
+  eventId   String
+  entityId  String
+  role      String?  // witness, participant, victim, perpetrator, etc.
+  notes     String?  @db.Text
+  createdAt DateTime @default(now())
+
+  event  LoreEvent  @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  entity LoreEntity @relation(fields: [entityId], references: [id], onDelete: Cascade)
+
+  @@unique([eventId, entityId])
+  @@index([eventId])
+  @@index([entityId])
 }
