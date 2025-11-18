@@ -1,0 +1,72 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum EntityType {
+  CHARACTER
+  LOCATION
+  ARTIFACT
+  FACTION
+  OTHER
+}
+
+model LoreEntity {
+  id              String   @id @default(cuid())
+  type            EntityType
+  name            String
+  summaryMarkdown String   @db.Text
+  metaJson        Json?    @default("{}")
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  // Relations
+  eventsAtLocation LoreEvent[]    @relation("EventLocation")
+  relationsFrom    LoreRelation[] @relation("RelationFrom")
+  relationsTo      LoreRelation[] @relation("RelationTo")
+
+  @@index([type])
+  @@index([name])
+}
+
+model LoreEvent {
+  id                  String   @id @default(cuid())
+  title               String
+  descriptionMarkdown String   @db.Text
+  occurredAt          DateTime
+  locationId          String?
+  metaJson            Json?    @default("{}")
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  // Relations
+  location LoreEntity? @relation("EventLocation", fields: [locationId], references: [id], onDelete: SetNull)
+
+  @@index([occurredAt])
+  @@index([locationId])
+}
+
+model LoreRelation {
+  id           String   @id @default(cuid())
+  fromId       String
+  toId         String
+  relationType String
+  description  String   @db.Text
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  // Relations
+  from LoreEntity @relation("RelationFrom", fields: [fromId], references: [id], onDelete: Cascade)
+  to   LoreEntity @relation("RelationTo", fields: [toId], references: [id], onDelete: Cascade)
+
+  @@index([fromId])
+  @@index([toId])
+  @@index([relationType])
+}
